@@ -54,5 +54,9 @@ RUN mkdir -p /app/data /app/users && \
 # Set the user to non-root (disabled for a while to support legacy setups which ran as root)
 #USER tronbyt
 
+# Home Assistant Add-on compatibility
+COPY run.sh /usr/bin/run.sh
+RUN chmod +x /usr/bin/run.sh
+
 # start the app
 ENTRYPOINT ["./run"]

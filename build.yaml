@@ -1,0 +1,13 @@
+build_from:
+  aarch64: "ghcr.io/tronbyt/server:latest"
+  amd64: "ghcr.io/tronbyt/server:latest"
+  armhf: "ghcr.io/tronbyt/server:latest"
+  armv7: "ghcr.io/tronbyt/server:latest"
+  i386: "ghcr.io/tronbyt/server:latest"
+labels:
+  org.opencontainers.image.title: "Tronbyt Server"
+  org.opencontainers.image.description: "Manage your apps on your Tronbyt completely locally"
+  org.opencontainers.image.source: "https://github.com/tronbyt/server"
+  org.opencontainers.image.licenses: "Apache-2.0"
+args:
+  TEMPIO_VERSION: "2021.09.0"

@@ -1,0 +1,40 @@
+name: Tronbyt Server
+version: "1.2.1"
+slug: tronbyt-server
+description: "Manage your apps on your Tronbyt completely locally"
+url: "https://github.com/tronbyt/server"
+startup: application
+arch:
+  - armhf
+  - armv7
+  - aarch64
+  - amd64
+  - i386
+init: false
+ports:
+  8000/tcp: 8000
+ports_description:
+  8000/tcp: "Web interface"
+options:
+  server_hostname_or_ip: "homeassistant.local"
+  production: true
+  timezone: "America/New_York"
+  secret_key: null
+  registration_enabled: true
+  max_upload_size: 10485760
+  system_app_data_location: "/share/tronbyt/system-apps"
+  log_level: "info"
+schema:
+  server_hostname_or_ip: "str"
+  production: "bool"
+  timezone: "str"
+  secret_key: "str?"
+  registration_enabled: "bool"
+  max_upload_size: "int(1048576,104857600)"
+  system_app_data_location: "str"
+  log_level: "list(debug|info|warning|error|critical)"
+map:
+  - share:rw
+  - ssl:ro
+  - config:rw
+image: "ghcr.io/tronbyt/server"
