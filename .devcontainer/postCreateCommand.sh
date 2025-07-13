@@ -49,3 +49,5 @@ curl -LO "${PIXLET_URL}"
 sudo tar -C /usr/local/bin -xvf "${PIXLET_FILENAME}"
 sudo mv /usr/local/bin/libpixlet.so /usr/lib/libpixlet.so
 rm "${PIXLET_FILENAME}"
+
+echo "Devcontainer setup complete. To start server, invoke with ./run"
