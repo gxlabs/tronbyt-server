@@ -1,0 +1,19 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    ports:
+      - "8000:8000" # Map server port on the host to port 8000 in the container
+    entrypoint: ["sleep", "infinity"]  # Override for development
+    volumes:
+      - .:/app # Mount the current directory to /app in the container
+      - "/etc/localtime:/etc/localtime:ro" # used to sync docker with host time
+    environment:
+      - SERVER_HOSTNAME=localhost
+      - SERVER_PORT=8000
+      - PYTHONUNBUFFERED=1
+      - SYSTEM_APPS_REPO
+      - PRODUCTION=0
+      - LOG_LEVEL=DEBUG
