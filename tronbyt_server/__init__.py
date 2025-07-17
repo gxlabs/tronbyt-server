@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from babel.dates import format_timedelta
 from dotenv import find_dotenv, load_dotenv
-from flask import Flask, current_app, g, request
+from flask import Flask, current_app, g, redirect, request, url_for
 from flask_babel import Babel, _
 from flask_sock import Sock
 from werkzeug.serving import is_running_from_reloader
@@ -276,6 +276,13 @@ def create_app(test_config: Optional[Dict[str, Any]] = None) -> Flask:
     app.add_url_rule("/", endpoint="index")
 
     sock.init_app(app)
+
+    @app.before_request
+    def handle_ingress():
+        if request.headers.get("X-Ingress-Path"):
+            # Handle Home Assistant ingress routing
+            if request.path == "/":
+                return redirect(url_for("index"))
 
     @app.template_filter("timeago")
     def timeago(seconds: int) -> str:

@@ -70,6 +70,26 @@ That said, the recommended installation method uses Docker Compose with a config
 
 3. Set the `SERVER_HOSTNAME_OR_IP` value in the `.env` file. IP addresses will work too.
 
+#### Home Assistant Add-on
+
+If you're running Home Assistant, you can install Tronbyt Server as a Home Assistant Add-on for easier management and integration.
+
+1. Add this repository to your Home Assistant Add-on store: `https://github.com/gxlabs/tronbyt-server`
+2. Install the "Tronbyt Server" add-on
+3. Configure the add-on options (especially `server_hostname_or_ip`)
+4. Start the add-on
+5. Access the web interface at `http://homeassistant.local:8000`
+
+**Configuration Options:**
+- `server_hostname_or_ip`: The hostname or IP address that devices will use to connect to the server
+- `production`: Set to `true` for production mode, `false` for development mode
+- `timezone`: The timezone for the server (e.g., "America/New_York", "Europe/London")
+- `secret_key`: A secret key for session management (optional, auto-generated if not provided)
+- `registration_enabled`: Whether to allow new user registration
+- `max_upload_size`: Maximum file upload size in bytes (default: 10MB)
+- `system_app_data_location`: Location to store system app data (default: "/share/tronbyt/system-apps")
+- `log_level`: Log level for the application (debug, info, warning, error, critical)
+
 #### Bare metal
 
 1. Install tronbyt-server using [Homebrew](https://brew.sh) (available on macOS and Linux):

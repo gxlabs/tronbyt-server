@@ -151,6 +151,30 @@ def logout() -> ResponseReturnValue:
 def login_required(view: Callable[..., Any]) -> Callable[..., Any]:
     @functools.wraps(view)
     def wrapped_view(**kwargs: Any) -> Any:
+        # Check if running within Home Assistant ingress
+        if request.headers.get("X-Ingress-Path"):
+            # Auto-authenticate for Home Assistant addon ingress
+            if g.user is None:
+                # Get or create a default user for Home Assistant ingress
+                username = "homeassistant"
+                user = db.get_user(username)
+                if user is None:
+                    # Create default user for Home Assistant ingress
+                    api_key = _generate_api_key()
+                    user = User(
+                        username=username,
+                        password=generate_password_hash("homeassistant"),
+                        email="homeassistant@addon.local",
+                        api_key=api_key,
+                        theme_preference="system",
+                    )
+                    db.save_user(user, new_user=True)
+                    db.create_user_dir(username)
+                
+                # Set the user in session and g
+                session["username"] = username
+                g.user = user
+        
         if g.user is None:
             return redirect(url_for("auth.login"))
         return view(**kwargs)

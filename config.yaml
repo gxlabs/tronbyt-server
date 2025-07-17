@@ -1,0 +1,38 @@
+name: Tronbyt Server
+version: "1.2.2"
+slug: homeassistant-addon
+description: "Serve Tronbyt apps"
+url: "https://github.com/gxlabs/tronbyt-server/tree/main"
+startup: application
+arch:
+  - armhf
+  - armv7
+  - aarch64
+  - amd64
+  - i386
+init: false
+ingress: true
+ingress_port: 8000
+options:
+  server_hostname_or_ip: "homeassistant.local"
+  production: false
+  timezone: "America/New_York"
+  secret_key: "wzKA2HZGRxmWaZnafCoyXRGKKynHe1xG"
+  registration_enabled: true
+  max_upload_size: 10485760
+  system_app_data_location: "/share/tronbyt/system-apps"
+  log_level: "debug"
+schema:
+  server_hostname_or_ip: "str"
+  production: "bool"
+  timezone: "str"
+  secret_key: "str?"
+  registration_enabled: "bool"
+  max_upload_size: "int(1048576,104857600)"
+  system_app_data_location: "str"
+  log_level: "list(debug|info|warning|error|critical)"
+map:
+  - share:rw
+  - ssl:ro
+  - config:rw
+
