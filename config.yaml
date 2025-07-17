@@ -14,7 +14,7 @@ init: false
 ingress: true
 ingress_port: 8000
 options:
-  server_hostname_or_ip: "homeassistant.local"
+  server_hostname_or_ip: "localhost"
   production: false
   timezone: "America/New_York"
   secret_key: "wzKA2HZGRxmWaZnafCoyXRGKKynHe1xG"
