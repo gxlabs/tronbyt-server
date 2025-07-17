@@ -1,5 +1,5 @@
 name: Tronbyt Server
-version: "1.2.3"
+version: "1.2.4
 slug: homeassistant-addon
 description: "Serve Tronbyt apps"
 url: "https://github.com/gxlabs/tronbyt-server/tree/main"
@@ -11,8 +11,10 @@ arch:
   - amd64
   - i386
 init: false
-ingress: true
-ingress_port: 8000
+ingress: false
+webui: "http://[HOST]:[PORT:8000]"
+ports:
+  8000/tcp: 8000
 options:
   server_hostname_or_ip: "localhost"
   production: false
