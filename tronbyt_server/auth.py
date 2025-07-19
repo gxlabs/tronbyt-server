@@ -170,11 +170,11 @@ def login_required(view: Callable[..., Any]) -> Callable[..., Any]:
                     )
                     db.save_user(user, new_user=True)
                     db.create_user_dir(username)
-                
+
                 # Set the user in session and g
                 session["username"] = username
                 g.user = user
-        
+
         if g.user is None:
             return redirect(url_for("auth.login"))
         return view(**kwargs)
