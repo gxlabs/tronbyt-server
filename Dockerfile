@@ -16,7 +16,7 @@ FROM ghcr.io/tronbyt/pixlet:0.42.1 AS pixlet
 FROM debian:trixie-slim AS runtime
 
 # 8000 for main app
-EXPOSE 8000
+EXPOSE 8099
 
 ENV PYTHONUNBUFFERED=1 \
     LIBPIXLET_PATH=/usr/lib/libpixlet.so
