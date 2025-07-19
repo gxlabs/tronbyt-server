@@ -1,4 +1,5 @@
 import functools
+import logging
 import secrets
 import string
 import time
@@ -23,6 +24,7 @@ import tronbyt_server.db as db
 from tronbyt_server.models.user import User
 
 bp = Blueprint("auth", __name__, url_prefix="/auth")
+logger = logging.getLogger(__name__)
 
 
 def _generate_api_key() -> str:
@@ -151,14 +153,18 @@ def logout() -> ResponseReturnValue:
 def login_required(view: Callable[..., Any]) -> Callable[..., Any]:
     @functools.wraps(view)
     def wrapped_view(**kwargs: Any) -> Any:
+        logger.info("Checking if user is logged in")
         # Check if running within Home Assistant ingress
         if request.headers.get("X-Ingress-Path"):
+            logger.info("Running within Home Assistant ingress")
             # Auto-authenticate for Home Assistant addon ingress
             if g.user is None:
+                logger.info("No user in session, checking for default user")
                 # Get or create a default user for Home Assistant ingress
                 username = "homeassistant"
                 user = db.get_user(username)
                 if user is None:
+                    logger.info("Creating default user for Home Assistant ingress")
                     # Create default user for Home Assistant ingress
                     api_key = _generate_api_key()
                     user = User(
@@ -171,6 +177,7 @@ def login_required(view: Callable[..., Any]) -> Callable[..., Any]:
                     db.save_user(user, new_user=True)
                     db.create_user_dir(username)
 
+                logger.info(f"Default user {username} authenticated")
                 # Set the user in session and g
                 session["username"] = username
                 g.user = user
@@ -199,8 +206,8 @@ def set_theme_preference() -> ResponseReturnValue:
     g.user["theme_preference"] = theme
     if db.save_user(g.user):
         # g.user is already updated in memory for the current request.
-        current_app.logger.info(f"User {g.user['username']} set theme to {theme}")
+        logger.info(f"User {g.user['username']} set theme to {theme}")
         return {"status": "success", "message": "Theme preference updated"}
     else:
-        current_app.logger.error(f"Failed to save theme for user {g.user['username']}")
+        logger.error(f"Failed to save theme for user {g.user['username']}")
         return {"status": "error", "message": "Failed to save theme preference"}, 500
