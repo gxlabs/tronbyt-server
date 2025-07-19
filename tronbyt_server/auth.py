@@ -24,7 +24,7 @@ import tronbyt_server.db as db
 from tronbyt_server.models.user import User
 
 bp = Blueprint("auth", __name__, url_prefix="/auth")
-logger = logging.getLogger("gunicorn.error")
+logger = logging.getLogger("gunicorn.glogging.Logger")
 
 
 def _generate_api_key() -> str:
