@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import secrets
 import shutil
@@ -50,6 +51,7 @@ from tronbyt_server.models.device import (
 from tronbyt_server.models.user import User
 
 bp = Blueprint("manager", __name__)
+logger = logging.getLogger("gunicorn.error")
 
 
 def git_command(
@@ -65,12 +67,15 @@ def git_command(
 @bp.get("/")
 @login_required
 def index() -> str:
+    logger.info("Loading manager index page")
     devices: list[Device] = list()
 
     if not g.user:
+        logger.error("No user found in session")
         current_app.logger.error("check [user].json file, might be corrupted")
 
     if "devices" in g.user:
+        logger.info(f"User {g.user['username']} has {len(g.user['devices'])} devices")
         # Get the devices and convert brightness values to UI scale for display
         devices = []
         for device in reversed(list(g.user["devices"].values())):
