@@ -2,7 +2,7 @@
 
 FROM debian:trixie-slim AS builder
 
-RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3-pdm
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends python3-pdm nginx
 ENV PDM_CHECK_UPDATE=false
 COPY . /app/
 WORKDIR /app
@@ -58,7 +58,7 @@ RUN mkdir -p /app/data /app/users && \
 # ENTRYPOINT ["./run"]
 
 #Add nginx and create the run folder for nginx.
-RUN apt-get install nginx && mkdir -p /run/nginx
+RUN mkdir -p /run/nginx
 
 #Copy our conf into the nginx http.d folder.
 COPY ingress.conf /etc/nginx/http.d/
