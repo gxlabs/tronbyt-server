@@ -55,4 +55,14 @@ RUN mkdir -p /app/data /app/users && \
 #USER tronbyt
 
 # start the app
-ENTRYPOINT ["./run"]
+# ENTRYPOINT ["./run"]
+
+#Add nginx and create the run folder for nginx.
+RUN apt-get install nginx && mkdir -p /run/nginx
+
+#Copy our conf into the nginx http.d folder.
+COPY ingress.conf /etc/nginx/http.d/
+
+#Launch nginx with debug options.
+CMD [ "nginx","-g","daemon off;error_log /dev/stdout debug;" ]
+
