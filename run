@@ -1,6 +1,9 @@
 #!/bin/bash
 set -euo pipefail
 
+# Start nginx in the background
+nginx -g "daemon off;" &
+
 if [ "${PRODUCTION:-1}" = "1" ]; then
     # PRODUCTION
     exec python3 -m gunicorn --config gunicorn.conf.py "tronbyt_server:create_app()"

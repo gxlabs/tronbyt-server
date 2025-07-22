@@ -15,8 +15,8 @@ FROM ghcr.io/tronbyt/pixlet:0.42.1 AS pixlet
 # build runtime image
 FROM debian:trixie-slim AS runtime
 
-# 8000 for main app
-EXPOSE 8000
+# 8000 for main app, 8099 for nginx proxy
+EXPOSE 8000 8099
 
 ENV PYTHONUNBUFFERED=1 \
     LIBPIXLET_PATH=/usr/lib/libpixlet.so
@@ -37,12 +37,16 @@ RUN apt-get update && \
     libwebp7 \
     libwebpdemux2 \
     libwebpmux3 \
+    nginx \
     python3 \
     tzdata \
     tzdata-legacy && \
     rm -rf /var/lib/apt/lists/*
 COPY --from=builder /app /app
 ENV PATH="/app/.venv/bin:$PATH"
+
+# Copy nginx configuration
+COPY ingress.conf /etc/nginx/sites-available/default
 
 # Create the directories for dynamic content ahead of time so that they are
 # owned by the non-root user (newly created named volumes are owned by root,
