@@ -1,5 +1,5 @@
 name: Tronbyt Server
-version: "1.2.28"
+version: "1.2.29"
 slug: tronbyt_server
 description: "Serve Tronbyt apps"
 url: "https://github.com/gxlabs/tronbyt-server/tree/main"
