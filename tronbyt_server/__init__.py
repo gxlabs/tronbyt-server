@@ -277,13 +277,6 @@ def create_app(test_config: Optional[Dict[str, Any]] = None) -> Flask:
 
     sock.init_app(app)
 
-    @app.before_request
-    def handle_ingress():
-        if request.headers.get("X-Ingress-Path"):
-            # Handle Home Assistant ingress routing
-            if request.path == "/":
-                return redirect(url_for("manager.index"))
-
     @app.template_filter("timeago")
     def timeago(seconds: int) -> str:
         if seconds == 0:
