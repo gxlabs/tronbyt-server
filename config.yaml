@@ -1,5 +1,5 @@
 name: Tronbyt Server
-version: "1.2.32"
+version: "1.2.33"
 slug: tronbyt_server
 description: "Serve Tronbyt apps"
 url: "https://github.com/gxlabs/tronbyt-server/tree/main"
@@ -11,7 +11,7 @@ arch:
   - amd64
   - i386
 init: false
-ingress: true
+webui: http://[HOST]:[PORT:8099]
 options:
   server_hostname_or_ip: "localhost"
   production: false
