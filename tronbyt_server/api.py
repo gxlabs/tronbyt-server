@@ -34,6 +34,27 @@ def get_api_key_from_headers(headers: Headers) -> Optional[str]:
     return None
 
 
+def authenticate_device_access(device_id: str, api_key: str) -> Optional[Device]:
+    """
+    Authenticate access to a device using either device API key or user API key.
+    Returns the device if authentication succeeds, None otherwise.
+    """
+    device = db.get_device_by_id(device_id)
+    if not device:
+        return None
+    
+    # Check if it's the device's own API key
+    if device.get("api_key") and device["api_key"] == api_key:
+        return device
+    
+    # Check if it's the user's API key
+    user = db.get_user_by_device_id(device_id)
+    if user and user.get("api_key") and user["api_key"] == api_key:
+        return device
+    
+    return None
+
+
 def get_device_payload(device: Device) -> dict[str, Any]:
     return {
         "id": device["id"],
@@ -143,8 +164,8 @@ def handle_push(device_id: str) -> ResponseReturnValue:
         if not api_key:
             raise ValueError("Missing or invalid Authorization header")
 
-        device = db.get_device_by_id(device_id)
-        if not device or device["api_key"] != api_key:
+        device = authenticate_device_access(device_id, api_key)
+        if not device:
             raise FileNotFoundError("Device not found or invalid API key")
 
         # get parameters from JSON data
@@ -196,8 +217,8 @@ def list_installations(device_id: str) -> ResponseReturnValue:
             description="Missing or invalid Authorization header",
         )
 
-    device = db.get_device_by_id(device_id)
-    if not device or device["api_key"] != api_key:
+    device = authenticate_device_access(device_id, api_key)
+    if not device:
         abort(HTTPStatus.NOT_FOUND)
 
     apps = device.get("apps", {})
@@ -231,8 +252,8 @@ def handle_patch_device_app(
             description="Missing or invalid Authorization header",
         )
 
-    device = db.get_device_by_id(device_id)
-    if not device or device["api_key"] != api_key:
+    device = authenticate_device_access(device_id, api_key)
+    if not device:
         abort(HTTPStatus.NOT_FOUND)
 
     # Handle the set_enabled json command
@@ -297,8 +318,8 @@ def handle_delete(device_id: str, installation_id: str) -> ResponseReturnValue:
             HTTPStatus.BAD_REQUEST,
             description="Missing or invalid Authorization header",
         )
-    device = db.get_device_by_id(device_id)
-    if not device or device["api_key"] != api_key:
+    device = authenticate_device_access(device_id, api_key)
+    if not device:
         abort(HTTPStatus.NOT_FOUND)
 
     pushed_webp_path = db.get_device_webp_dir(device["id"]) / "pushed"
@@ -331,8 +352,8 @@ def handle_app_push(device_id: str) -> ResponseReturnValue:
         if not api_key:
             raise ValueError("Missing or invalid Authorization header")
 
-        device = db.get_device_by_id(device_id)
-        if not device or device["api_key"] != api_key:
+        device = authenticate_device_access(device_id, api_key)
+        if not device:
             raise FileNotFoundError("Device not found or invalid API key")
 
         user = db.get_user_by_device_id(device_id)
