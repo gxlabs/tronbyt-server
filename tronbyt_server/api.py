@@ -17,6 +17,7 @@ from werkzeug.datastructures import Headers
 from werkzeug.utils import secure_filename
 
 import tronbyt_server.db as db
+from tronbyt_server import call_handler
 from tronbyt_server.manager import push_new_image, render_app
 from tronbyt_server.models.app import App
 from tronbyt_server.models.device import Device, validate_device_id
@@ -524,3 +525,53 @@ def handle_app_push(device_id: str) -> ResponseReturnValue:
         abort(HTTPStatus.NOT_FOUND, description=str(e))
     except RuntimeError as e:
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=str(e))
+
+
+@bp.post("/devices/<string:device_id>/installations/<string:installation_id>/schema_handler/<string:handler>")
+def api_schema_handler(device_id: str, installation_id: str, handler: str) -> ResponseReturnValue:
+    """
+    Call a schema handler for an installed app on a device.
+    Accepts both user API key and device API key.
+    """
+    if not validate_device_id(device_id):
+        abort(HTTPStatus.BAD_REQUEST, description="Invalid device ID")
+    
+    # Get API key from Authorization header
+    api_key = get_api_key_from_headers(request.headers)
+    if not api_key:
+        abort(
+            HTTPStatus.BAD_REQUEST,
+            description="Missing or invalid Authorization header",
+        )
+    
+    # Authenticate device access
+    device = authenticate_device_access(device_id, api_key)
+    if not device:
+        abort(HTTPStatus.NOT_FOUND, description="Device not found or unauthorized")
+    
+    # Get the user who owns this device
+    user = db.get_user_by_device_id(device_id)
+    if not user:
+        abort(HTTPStatus.NOT_FOUND, description="User not found")
+    
+    # Get the app installation
+    app = user["devices"][device_id].get("apps", {}).get(installation_id)
+    if not app:
+        abort(HTTPStatus.NOT_FOUND, description="App installation not found")
+    
+    try:
+        # Parse the JSON body
+        data = request.get_json()
+        if not data or "param" not in data:
+            abort(HTTPStatus.BAD_REQUEST, description="Invalid request body")
+        
+        # Call the handler with the provided parameter
+        result = call_handler(Path(app["path"]), handler, data["param"])
+        if result is None:
+            abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Handler execution failed")
+        
+        # Return the result as JSON
+        return Response(result, mimetype="application/json")
+    except Exception as e:
+        current_app.logger.error(f"Error in api_schema_handler: {e}")
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Handler execution failed")
