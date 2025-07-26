@@ -41,17 +41,21 @@ def authenticate_device_access(device_id: str, api_key: str) -> Optional[Device]
     """
     device = db.get_device_by_id(device_id)
     if not device:
+        current_app.logger.debug(f"Device not found: {device_id}")
         return None
     
     # Check if it's the device's own API key
     if device.get("api_key") and device["api_key"] == api_key:
+        current_app.logger.debug(f"Authenticated with device API key for device: {device_id}")
         return device
     
     # Check if it's the user's API key
     user = db.get_user_by_device_id(device_id)
     if user and user.get("api_key") and user["api_key"] == api_key:
+        current_app.logger.debug(f"Authenticated with user API key for device: {device_id}")
         return device
     
+    current_app.logger.debug(f"Authentication failed for device: {device_id}")
     return None
 
 
