@@ -133,6 +133,224 @@ def get_device(device_id: str) -> ResponseReturnValue:
     return Response(json.dumps(metadata), status=200, mimetype="application/json")
 
 
+@bp.route("/devices", methods=["POST"])
+def create_device() -> ResponseReturnValue:
+    """Create a new device"""
+    api_key = get_api_key_from_headers(request.headers)
+    if not api_key:
+        abort(
+            HTTPStatus.BAD_REQUEST,
+            description="Missing or invalid Authorization header",
+        )
+
+    user = db.get_user_by_api_key(api_key)
+    if not user:
+        abort(HTTPStatus.UNAUTHORIZED, description="Invalid API key")
+
+    data = request.get_json()
+    if not data:
+        abort(HTTPStatus.BAD_REQUEST, description="Invalid JSON data")
+
+    name = data.get("name")
+    if not name:
+        abort(HTTPStatus.BAD_REQUEST, description="Device name is required")
+
+    # Check if device with this name already exists for user
+    if db.get_device_by_name(user, name):
+        abort(HTTPStatus.CONFLICT, description="Device with this name already exists")
+
+    # Generate unique device ID
+    import uuid
+    max_attempts = 10
+    for _ in range(max_attempts):
+        device_id = str(uuid.uuid4())[0:8]
+        if device_id not in user.get("devices", {}):
+            break
+    else:
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Could not generate unique device ID")
+
+    # Generate API key for device if not provided
+    device_api_key = data.get("api_key")
+    if not device_api_key:
+        import secrets
+        import string
+        device_api_key = "".join(
+            secrets.choice(string.ascii_letters + string.digits) for _ in range(32)
+        )
+
+    # Create device with provided data
+    from tronbyt_server.models.device import Device, DEFAULT_DEVICE_TYPE, validate_device_type
+    
+    device_type = data.get("type", DEFAULT_DEVICE_TYPE)
+    if not validate_device_type(device_type):
+        abort(HTTPStatus.BAD_REQUEST, description="Invalid device type")
+
+    device = Device(
+        id=device_id,
+        name=name,
+        type=device_type,
+        api_key=device_api_key,
+        brightness=data.get("brightness", 50),  # Default 50%
+        default_interval=data.get("default_interval", 10),
+    )
+
+    # Optional fields
+    if data.get("notes"):
+        device["notes"] = data["notes"]
+    if data.get("img_url"):
+        device["img_url"] = data["img_url"]
+    else:
+        from tronbyt_server.manager import server_root
+        device["img_url"] = f"{server_root()}/{device_id}/next"
+
+    # Save device
+    user.setdefault("devices", {})[device_id] = device
+    if db.save_user(user):
+        # Create device directory
+        device_dir = db.get_device_webp_dir(device_id)
+        if not device_dir.is_dir():
+            device_dir.mkdir(parents=True)
+        
+        metadata = get_device_payload(device)
+        metadata["api_key"] = device_api_key  # Include API key in creation response
+        return Response(
+            json.dumps(metadata),
+            status=201,
+            mimetype="application/json"
+        )
+    else:
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Failed to save device")
+
+
+@bp.route("/devices/<string:device_id>", methods=["PUT"])
+def update_device(device_id: str) -> ResponseReturnValue:
+    """Update an existing device"""
+    if not validate_device_id(device_id):
+        abort(HTTPStatus.BAD_REQUEST, description="Invalid device ID")
+
+    api_key = get_api_key_from_headers(request.headers)
+    if not api_key:
+        abort(
+            HTTPStatus.BAD_REQUEST,
+            description="Missing or invalid Authorization header",
+        )
+
+    user = db.get_user_by_device_id(device_id)
+    if not user:
+        abort(HTTPStatus.NOT_FOUND, description="Device not found")
+    
+    device = user["devices"].get(device_id)
+    if not device:
+        abort(HTTPStatus.NOT_FOUND, description="Device not found")
+
+    # Check authorization (user API key or device API key)
+    user_api_key_matches = user.get("api_key") and user["api_key"] == api_key
+    device_api_key_matches = device.get("api_key") and device["api_key"] == api_key
+    if not user_api_key_matches and not device_api_key_matches:
+        abort(HTTPStatus.FORBIDDEN, description="Unauthorized")
+
+    data = request.get_json()
+    if not data:
+        abort(HTTPStatus.BAD_REQUEST, description="Invalid JSON data")
+
+    # Update device fields
+    from tronbyt_server.models.device import validate_device_type
+    
+    if "name" in data:
+        # Check if another device has this name
+        existing_device = db.get_device_by_name(user, data["name"])
+        if existing_device and existing_device.get("id") != device_id:
+            abort(HTTPStatus.CONFLICT, description="Device with this name already exists")
+        device["name"] = data["name"]
+    
+    if "type" in data:
+        if not validate_device_type(data["type"]):
+            abort(HTTPStatus.BAD_REQUEST, description="Invalid device type")
+        device["type"] = data["type"]
+    
+    if "brightness" in data:
+        brightness = int(data["brightness"])
+        if brightness < 0 or brightness > 100:
+            abort(HTTPStatus.BAD_REQUEST, description="Brightness must be between 0 and 100")
+        device["brightness"] = brightness
+    
+    if "default_interval" in data:
+        interval = int(data["default_interval"])
+        if interval < 1:
+            abort(HTTPStatus.BAD_REQUEST, description="Default interval must be at least 1")
+        device["default_interval"] = interval
+    
+    if "notes" in data:
+        device["notes"] = data["notes"]
+    
+    if "img_url" in data:
+        device["img_url"] = data["img_url"]
+    
+    if "night_mode_enabled" in data:
+        device["night_mode_enabled"] = bool(data["night_mode_enabled"])
+    
+    if "night_brightness" in data:
+        night_brightness = int(data["night_brightness"])
+        if night_brightness < 0 or night_brightness > 100:
+            abort(HTTPStatus.BAD_REQUEST, description="Night brightness must be between 0 and 100")
+        device["night_brightness"] = night_brightness
+    
+    if "night_start" in data:
+        device["night_start"] = int(data["night_start"])
+    
+    if "night_end" in data:
+        device["night_end"] = int(data["night_end"])
+
+    # Save updated device
+    if db.save_user(user):
+        metadata = get_device_payload(device)
+        return Response(
+            json.dumps(metadata),
+            status=200,
+            mimetype="application/json"
+        )
+    else:
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Failed to save device")
+
+
+@bp.route("/devices/<string:device_id>", methods=["DELETE"])
+def delete_device(device_id: str) -> ResponseReturnValue:
+    """Delete a device"""
+    if not validate_device_id(device_id):
+        abort(HTTPStatus.BAD_REQUEST, description="Invalid device ID")
+
+    api_key = get_api_key_from_headers(request.headers)
+    if not api_key:
+        abort(
+            HTTPStatus.BAD_REQUEST,
+            description="Missing or invalid Authorization header",
+        )
+
+    user = db.get_user_by_device_id(device_id)
+    if not user:
+        abort(HTTPStatus.NOT_FOUND, description="Device not found")
+    
+    device = user["devices"].get(device_id)
+    if not device:
+        abort(HTTPStatus.NOT_FOUND, description="Device not found")
+
+    # Check authorization (user API key or device API key)
+    user_api_key_matches = user.get("api_key") and user["api_key"] == api_key
+    device_api_key_matches = device.get("api_key") and device["api_key"] == api_key
+    if not user_api_key_matches and not device_api_key_matches:
+        abort(HTTPStatus.FORBIDDEN, description="Unauthorized")
+
+    # Remove device from user's devices
+    user["devices"].pop(device_id, None)
+    
+    # Save user data and clean up device directories
+    if db.save_user(user):
+        db.delete_device_dirs(device_id)
+        return Response("", status=204)
+    else:
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Failed to delete device")
+
+
 def push_image(
     device_id: str, installation_id: Optional[str], image_bytes: bytes
 ) -> None:
