@@ -40,7 +40,7 @@ esac
 
 # Construct the URL
 # e.g. https://github.com/tronbyt/pixlet/releases/download/v0.42.1/pixlet_v0.42.1_darwin_amd64.tar.gz
-PIXLET_VERSION="v0.42.1"
+PIXLET_VERSION=v0.43.0
 PIXLET_FILENAME="pixlet_${PIXLET_VERSION}_${OS}_${ARCH}.tar.gz"
 PIXLET_URL="https://github.com/tronbyt/pixlet/releases/download/${PIXLET_VERSION}/${PIXLET_FILENAME}"
 echo "Downloading Pixlet from ${PIXLET_URL}"
