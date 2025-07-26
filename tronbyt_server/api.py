@@ -345,6 +345,118 @@ def handle_delete(device_id: str, installation_id: str) -> ResponseReturnValue:
     return Response("Webp deleted.", status=200)
 
 
+@bp.get("/apps")
+def list_available_apps() -> ResponseReturnValue:
+    """List all available apps (system and user apps)"""
+    api_key = get_api_key_from_headers(request.headers)
+    if not api_key:
+        abort(
+            HTTPStatus.BAD_REQUEST,
+            description="Missing or invalid Authorization header",
+        )
+    
+    user = db.get_user_by_api_key(api_key)
+    if not user:
+        abort(HTTPStatus.UNAUTHORIZED, description="Invalid API key")
+    
+    # Get system apps
+    system_apps_list = db.get_apps_list("system")
+    
+    # Get user's custom apps
+    custom_apps_list = db.get_apps_list(user["username"])
+    
+    # Format the response
+    apps = {
+        "system_apps": [
+            {
+                "id": app["id"],
+                "name": app.get("name", app["id"]),
+                "description": app.get("description", ""),
+                "path": app["path"]
+            }
+            for app in system_apps_list
+        ],
+        "custom_apps": [
+            {
+                "id": app["id"],
+                "name": app.get("name", app["id"]),
+                "description": app.get("description", ""),
+                "path": app["path"]
+            }
+            for app in custom_apps_list
+        ]
+    }
+    
+    return Response(
+        json.dumps(apps),
+        status=200,
+        mimetype="application/json"
+    )
+
+
+@bp.get("/devices/<string:device_id>/apps")
+def list_device_apps(device_id: str) -> ResponseReturnValue:
+    """List all apps available for a specific device"""
+    if not validate_device_id(device_id):
+        abort(HTTPStatus.BAD_REQUEST, description="Invalid device ID")
+    
+    api_key = get_api_key_from_headers(request.headers)
+    if not api_key:
+        abort(
+            HTTPStatus.BAD_REQUEST,
+            description="Missing or invalid Authorization header",
+        )
+    
+    device = authenticate_device_access(device_id, api_key)
+    if not device:
+        abort(HTTPStatus.NOT_FOUND)
+    
+    # Get the user who owns this device
+    user = db.get_user_by_device_id(device_id)
+    if not user:
+        abort(HTTPStatus.NOT_FOUND, description="User not found")
+    
+    # Get system apps
+    system_apps_list = db.get_apps_list("system")
+    
+    # Get user's custom apps
+    custom_apps_list = db.get_apps_list(user["username"])
+    
+    # Get currently installed apps on the device
+    installed_apps = device.get("apps", {})
+    installed_app_names = {app.get("name") for app in installed_apps.values() if app.get("name")}
+    
+    # Format the response
+    apps = {
+        "system_apps": [
+            {
+                "id": app["id"],
+                "name": app.get("name", app["id"]),
+                "description": app.get("description", ""),
+                "path": app["path"],
+                "installed": app.get("name", app["id"]) in installed_app_names
+            }
+            for app in system_apps_list
+        ],
+        "custom_apps": [
+            {
+                "id": app["id"],
+                "name": app.get("name", app["id"]),
+                "description": app.get("description", ""),
+                "path": app["path"],
+                "installed": app.get("name", app["id"]) in installed_app_names
+            }
+            for app in custom_apps_list
+        ]
+    }
+    
+    return Response(
+        json.dumps(apps),
+        status=200,
+        mimetype="application/json"
+    )
+
+
 @bp.post("/devices/<string:device_id>/push_app")
 def handle_app_push(device_id: str) -> ResponseReturnValue:
     try:
