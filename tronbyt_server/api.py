@@ -427,8 +427,8 @@ def handle_push(device_id: str) -> ResponseReturnValue:
         )
 
 
-@bp.get("/devices/<string:device_id>/installations")
-def list_installations(device_id: str) -> ResponseReturnValue:
+@bp.route("/devices/<string:device_id>/installations", methods=["GET", "POST"])
+def handle_installations(device_id: str) -> ResponseReturnValue:
     if not validate_device_id(device_id):
         abort(HTTPStatus.BAD_REQUEST, description="Invalid device ID")
 
@@ -444,16 +444,104 @@ def list_installations(device_id: str) -> ResponseReturnValue:
     if not device:
         abort(HTTPStatus.NOT_FOUND)
 
-    apps = device.get("apps", {})
-    installations = [
-        {"id": installation_id, "appID": app_data.get("name", "")}
-        for installation_id, app_data in apps.items()
-    ]
-    return Response(
-        json.dumps({"installations": installations}),
-        status=200,
-        mimetype="application/json",
-    )
+    if request.method == "GET":
+        # List installations
+        apps = device.get("apps", {})
+        installations = [
+            {"id": installation_id, "appID": app_data.get("name", "")}
+            for installation_id, app_data in apps.items()
+        ]
+        return Response(
+            json.dumps({"installations": installations}),
+            status=200,
+            mimetype="application/json",
+        )
+    
+    elif request.method == "POST":
+        # Install new app
+        user = db.get_user_by_device_id(device_id)
+        if not user:
+            abort(HTTPStatus.NOT_FOUND, description="User not found")
+
+        data = request.get_json()
+        if not data:
+            abort(HTTPStatus.BAD_REQUEST, description="Invalid JSON data")
+
+        app_name = data.get("app_name")
+        if not app_name:
+            abort(HTTPStatus.BAD_REQUEST, description="App name is required")
+
+        # Get app details
+        app_details = db.get_app_details_by_name(user["username"], app_name)
+        if not app_details:
+            abort(HTTPStatus.NOT_FOUND, description="App not found")
+
+        app_path = app_details.get("path")
+        if not app_path:
+            abort(HTTPStatus.NOT_FOUND, description="App path not found")
+
+        # Generate unique installation ID
+        from random import randint
+        max_attempts = 10
+        for _ in range(max_attempts):
+            iname = str(randint(100, 999))
+            if iname not in device.get("apps", {}):
+                break
+        else:
+            abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Could not generate unique installation ID")
+
+        # Create app installation
+        app = App(
+            name=app_name,
+            iname=iname,
+            enabled=data.get("enabled", False),
+            last_render=0,
+            path=app_path,
+        )
+
+        # Set optional fields
+        if "uinterval" in data:
+            app["uinterval"] = int(data["uinterval"])
+        elif "recommended_interval" in app_details:
+            app["uinterval"] = app_details["recommended_interval"]
+
+        if "display_time" in data:
+            app["display_time"] = int(data["display_time"])
+
+        if "notes" in data:
+            app["notes"] = data["notes"]
+
+        if "config" in data:
+            app["config"] = data["config"]
+
+        app_id = app_details.get("id")
+        if app_id:
+            app["id"] = app_id
+
+        # Add to device
+        apps = user["devices"][device_id].setdefault("apps", {})
+        app["order"] = len(apps)
+        apps[iname] = app
+
+        # Save user
+        if db.save_user(user):
+            # Return installation details
+            installation_data = {
+                "id": iname,
+                "appID": app_name,
+                "enabled": app.get("enabled", False),
+                "uinterval": app.get("uinterval"),
+                "display_time": app.get("display_time"),
+                "notes": app.get("notes", ""),
+                "order": app.get("order", 0)
+            }
+            return Response(
+                json.dumps(installation_data),
+                status=201,
+                mimetype="application/json"
+            )
+        else:
+            abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Failed to save app installation")
 
 
 ########################################################################################################
