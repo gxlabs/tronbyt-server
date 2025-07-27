@@ -497,7 +497,11 @@ def handle_installations(device_id: str) -> ResponseReturnValue:
         # List installations
         apps = device.get("apps", {})
         installations = [
-            {"id": installation_id, "appID": app_data.get("name", "")}
+            {
+                "id": installation_id, 
+                "appID": app_data.get("name", ""),
+                "enabled": app_data.get("enabled", False)
+            }
             for installation_id, app_data in apps.items()
         ]
         return Response(
