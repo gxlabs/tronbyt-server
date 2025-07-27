@@ -312,8 +312,6 @@ def update_device(device_id: str) -> ResponseReturnValue:
     data = get_request_json_or_abort()
 
     # Update device fields
-    from tronbyt_server.models.device import validate_device_type
-    
     if "name" in data:
         # Check if another device has this name
         existing_device = db.get_device_by_name(user, data["name"])
@@ -526,7 +524,6 @@ def handle_installations(device_id: str) -> ResponseReturnValue:
             abort(HTTPStatus.NOT_FOUND, description="App path not found")
 
         # Generate unique installation ID
-        from random import randint
         max_attempts = 10
         for _ in range(max_attempts):
             iname = str(randint(100, 999))
@@ -753,7 +750,6 @@ def get_app_schema(app_id: str) -> ResponseReturnValue:
     
     try:
         # Get the schema for the app
-        from tronbyt_server import get_schema
         schema_json = get_schema(Path(app_path))
         if schema_json is None:
             return Response(
@@ -922,7 +918,6 @@ def get_installation_schema(device_id: str, installation_id: str) -> ResponseRet
     
     try:
         # Get the schema for the app
-        from tronbyt_server import get_schema
         schema_json = get_schema(Path(app["path"]))
         if schema_json is None:
             return Response(
