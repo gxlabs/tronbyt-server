@@ -970,3 +970,44 @@ def api_schema_handler(device_id: str, installation_id: str, handler: str) -> Re
     except Exception as e:
         current_app.logger.error(f"Error in api_schema_handler: {e}")
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Handler execution failed")
+
+
+@bp.get("/devices/<string:device_id>/installations/<string:installation_id>/preview")
+def api_preview(device_id: str, installation_id: str) -> ResponseReturnValue:
+    """
+    Generate a preview image for an installed app on a device.
+    Accepts both user API key and device API key.
+    Takes config as query parameter (JSON string).
+    """
+    validate_and_get_device(device_id)
+    api_key = require_api_key()
+    device, user = get_device_and_user(device_id, api_key)
+    app = get_app_installation(user, device_id, installation_id)
+    
+    config = json.loads(request.args.get("config", "{}"))
+    
+    # Add default config (timezone, etc.)
+    config["$tz"] = db.get_device_timezone_str(device)
+    
+    app_path = Path(app["path"])
+    if not app_path.exists():
+        abort(HTTPStatus.NOT_FOUND, description="App path not found")
+    
+    try:
+        data = render_app(
+            app_path=app_path,
+            config=config,
+            webp_path=None,
+            device=device,
+            app=app,
+        )
+        if data is None:
+            abort(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                description="Error running pixlet render",
+            )
+        
+        return Response(data, mimetype="image/webp")
+    except Exception as e:
+        current_app.logger.error(f"Error in api_preview: {e}")
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Error generating preview")
