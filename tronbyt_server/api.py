@@ -1011,3 +1011,52 @@ def api_preview(device_id: str, installation_id: str) -> ResponseReturnValue:
     except Exception as e:
         current_app.logger.error(f"Error in api_preview: {e}")
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Error generating preview")
+
+
+@bp.get("/devices/<string:device_id>/apps/<string:app_id>/preview")
+def api_app_preview(device_id: str, app_id: str) -> ResponseReturnValue:
+    """
+    Generate a preview image for an app (not necessarily installed) on a device.
+    Accepts both user API key and device API key.
+    Takes config as query parameter (JSON string).
+    """
+    validate_and_get_device(device_id)
+    api_key = require_api_key()
+    device, user = get_device_and_user(device_id, api_key)
+    
+    # Get app details by ID or name
+    app_details = get_app_by_id_or_name(user["username"], app_id)
+    
+    config = json.loads(request.args.get("config", "{}"))
+    
+    # Add default config (timezone, etc.)
+    config["$tz"] = db.get_device_timezone_str(device)
+    
+    app_path = Path(app_details["path"])
+    if not app_path.exists():
+        abort(HTTPStatus.NOT_FOUND, description="App path not found")
+    
+    # Create a minimal app object for rendering
+    app = {
+        "name": app_details.get("name", app_id),
+        "path": app_details["path"]
+    }
+    
+    try:
+        data = render_app(
+            app_path=app_path,
+            config=config,
+            webp_path=None,
+            device=device,
+            app=app,
+        )
+        if data is None:
+            abort(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                description="Error running pixlet render",
+            )
+        
+        return Response(data, mimetype="image/webp")
+    except Exception as e:
+        current_app.logger.error(f"Error in api_app_preview: {e}")
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Error generating preview")
