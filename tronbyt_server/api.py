@@ -701,6 +701,100 @@ def list_available_apps() -> ResponseReturnValue:
     )
 
 
+@bp.get("/apps/<string:app_id>/schema")
+def get_app_schema(app_id: str) -> ResponseReturnValue:
+    """Get the schema for an app by its ID"""
+    api_key = get_api_key_from_headers(request.headers)
+    if not api_key:
+        abort(
+            HTTPStatus.BAD_REQUEST,
+            description="Missing or invalid Authorization header",
+        )
+    
+    user = db.get_user_by_api_key(api_key)
+    if not user:
+        abort(HTTPStatus.UNAUTHORIZED, description="Invalid API key")
+    
+    # Try to get app details by ID first, then by name
+    app_details = db.get_app_details_by_id(user["username"], app_id)
+    if not app_details:
+        app_details = db.get_app_details_by_name(user["username"], app_id)
+    
+    if not app_details:
+        abort(HTTPStatus.NOT_FOUND, description="App not found")
+    
+    app_path = app_details.get("path")
+    if not app_path:
+        abort(HTTPStatus.NOT_FOUND, description="App path not found")
+    
+    try:
+        # Get the schema for the app
+        from tronbyt_server import get_schema
+        schema_json = get_schema(Path(app_path))
+        if schema_json is None:
+            return Response(
+                json.dumps({"schema": None}),
+                mimetype="application/json"
+            )
+        
+        # Parse and return the schema
+        schema = json.loads(schema_json) if schema_json else None
+        return Response(
+            json.dumps({"schema": schema}),
+            mimetype="application/json"
+        )
+    except Exception as e:
+        current_app.logger.error(f"Error getting app schema: {e}")
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Failed to get schema")
+
+
+@bp.post("/apps/<string:app_id>/schema_handler/<string:handler>")
+def app_schema_handler(app_id: str, handler: str) -> ResponseReturnValue:
+    """
+    Call a schema handler for an app.
+    This allows testing schema handlers before installing the app.
+    """
+    api_key = get_api_key_from_headers(request.headers)
+    if not api_key:
+        abort(
+            HTTPStatus.BAD_REQUEST,
+            description="Missing or invalid Authorization header",
+        )
+    
+    user = db.get_user_by_api_key(api_key)
+    if not user:
+        abort(HTTPStatus.UNAUTHORIZED, description="Invalid API key")
+    
+    # Try to get app details by ID first, then by name
+    app_details = db.get_app_details_by_id(user["username"], app_id)
+    if not app_details:
+        app_details = db.get_app_details_by_name(user["username"], app_id)
+    
+    if not app_details:
+        abort(HTTPStatus.NOT_FOUND, description="App not found")
+    
+    app_path = app_details.get("path")
+    if not app_path:
+        abort(HTTPStatus.NOT_FOUND, description="App path not found")
+    
+    try:
+        # Parse the JSON body
+        data = request.get_json()
+        if not data or "param" not in data:
+            abort(HTTPStatus.BAD_REQUEST, description="Invalid request body")
+        
+        # Call the handler with the provided parameter
+        result = call_handler(Path(app_path), handler, data["param"])
+        if result is None:
+            abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Handler execution failed")
+        
+        # Return the result as JSON
+        return Response(result, mimetype="application/json")
+    except Exception as e:
+        current_app.logger.error(f"Error in app_schema_handler: {e}")
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Handler execution failed")
+
+
 @bp.get("/devices/<string:device_id>/apps")
 def list_device_apps(device_id: str) -> ResponseReturnValue:
     """List all apps available for a specific device"""
@@ -831,6 +925,59 @@ def handle_app_push(device_id: str) -> ResponseReturnValue:
         abort(HTTPStatus.NOT_FOUND, description=str(e))
     except RuntimeError as e:
         abort(HTTPStatus.INTERNAL_SERVER_ERROR, description=str(e))
+
+
+@bp.get("/devices/<string:device_id>/installations/<string:installation_id>/schema")
+def get_installation_schema(device_id: str, installation_id: str) -> ResponseReturnValue:
+    """
+    Get the schema for an installed app on a device.
+    Accepts both user API key and device API key.
+    """
+    if not validate_device_id(device_id):
+        abort(HTTPStatus.BAD_REQUEST, description="Invalid device ID")
+    
+    # Get API key from Authorization header
+    api_key = get_api_key_from_headers(request.headers)
+    if not api_key:
+        abort(
+            HTTPStatus.BAD_REQUEST,
+            description="Missing or invalid Authorization header",
+        )
+    
+    # Authenticate device access
+    device = authenticate_device_access(device_id, api_key)
+    if not device:
+        abort(HTTPStatus.NOT_FOUND, description="Device not found or unauthorized")
+    
+    # Get the user who owns this device
+    user = db.get_user_by_device_id(device_id)
+    if not user:
+        abort(HTTPStatus.NOT_FOUND, description="User not found")
+    
+    # Get the app installation
+    app = user["devices"][device_id].get("apps", {}).get(installation_id)
+    if not app:
+        abort(HTTPStatus.NOT_FOUND, description="App installation not found")
+    
+    try:
+        # Get the schema for the app
+        from tronbyt_server import get_schema
+        schema_json = get_schema(Path(app["path"]))
+        if schema_json is None:
+            return Response(
+                json.dumps({"schema": None}),
+                mimetype="application/json"
+            )
+        
+        # Parse and return the schema
+        schema = json.loads(schema_json) if schema_json else None
+        return Response(
+            json.dumps({"schema": schema}),
+            mimetype="application/json"
+        )
+    except Exception as e:
+        current_app.logger.error(f"Error getting schema: {e}")
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR, description="Failed to get schema")
 
 
 @bp.post("/devices/<string:device_id>/installations/<string:installation_id>/schema_handler/<string:handler>")
