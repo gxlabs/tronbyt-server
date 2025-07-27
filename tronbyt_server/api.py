@@ -1,8 +1,12 @@
 import base64
 import json
+import secrets
+import string
 import time
+import uuid
 from http import HTTPStatus
 from pathlib import Path
+from random import randint
 from typing import Any, Dict, Optional
 
 from flask import (
@@ -17,10 +21,10 @@ from werkzeug.datastructures import Headers
 from werkzeug.utils import secure_filename
 
 import tronbyt_server.db as db
-from tronbyt_server import call_handler
-from tronbyt_server.manager import push_new_image, render_app
+from tronbyt_server import call_handler, get_schema
+from tronbyt_server.manager import push_new_image, render_app, add_default_config, server_root
 from tronbyt_server.models.app import App
-from tronbyt_server.models.device import Device, validate_device_id
+from tronbyt_server.models.device import Device, validate_device_id, DEFAULT_DEVICE_TYPE, validate_device_type
 
 bp = Blueprint("api", __name__, url_prefix="/v0")
 
@@ -231,7 +235,6 @@ def create_device() -> ResponseReturnValue:
         abort(HTTPStatus.CONFLICT, description="Device with this name already exists")
 
     # Generate unique device ID
-    import uuid
     max_attempts = 10
     for _ in range(max_attempts):
         device_id = str(uuid.uuid4())[0:8]
@@ -243,15 +246,11 @@ def create_device() -> ResponseReturnValue:
     # Generate API key for device if not provided
     device_api_key = data.get("api_key")
     if not device_api_key:
-        import secrets
-        import string
         device_api_key = "".join(
             secrets.choice(string.ascii_letters + string.digits) for _ in range(32)
         )
 
     # Create device with provided data
-    from tronbyt_server.models.device import Device, DEFAULT_DEVICE_TYPE, validate_device_type
-    
     device_type = data.get("type", DEFAULT_DEVICE_TYPE)
     if not validate_device_type(device_type):
         abort(HTTPStatus.BAD_REQUEST, description="Invalid device type")
@@ -271,7 +270,6 @@ def create_device() -> ResponseReturnValue:
     if data.get("img_url"):
         device["img_url"] = data["img_url"]
     else:
-        from tronbyt_server.manager import server_root
         device["img_url"] = f"{server_root()}/{device_id}/next"
 
     # Save device
@@ -986,8 +984,8 @@ def api_preview(device_id: str, installation_id: str) -> ResponseReturnValue:
     
     config = json.loads(request.args.get("config", "{}"))
     
-    # Add default config (timezone, etc.)
-    config["$tz"] = db.get_device_timezone_str(device)
+    # Add default config (timezone, etc.) - using the same function as the original preview
+    add_default_config(config, device)
     
     app_path = Path(app["path"])
     if not app_path.exists():
@@ -1029,8 +1027,8 @@ def api_app_preview(device_id: str, app_id: str) -> ResponseReturnValue:
     
     config = json.loads(request.args.get("config", "{}"))
     
-    # Add default config (timezone, etc.)
-    config["$tz"] = db.get_device_timezone_str(device)
+    # Add default config (timezone, etc.) - using the same function as the original preview
+    add_default_config(config, device)
     
     app_path = Path(app_details["path"])
     if not app_path.exists():
