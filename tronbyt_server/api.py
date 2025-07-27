@@ -590,17 +590,40 @@ def handle_installations(device_id: str) -> ResponseReturnValue:
 ########################################################################################################
 @bp.route(
     "/devices/<string:device_id>/installations/<string:installation_id>",
-    methods=["PATCH", "PUT"],
+    methods=["GET", "PATCH", "PUT"],
 )
-def handle_patch_device_app(
+def handle_device_app(
     device_id: str, installation_id: str
 ) -> ResponseReturnValue:
     validate_and_get_device(device_id)
     api_key = require_api_key()
     device, user = get_device_and_user(device_id, api_key)
 
+    if request.method == "GET":
+        # Get app installation details
+        app = get_app_installation(user, device_id, installation_id)
+        
+        installation_data = {
+            "id": installation_id,
+            "appID": app.get("name", ""),
+            "enabled": app.get("enabled", False),
+            "uinterval": app.get("uinterval"),
+            "display_time": app.get("display_time"),
+            "notes": app.get("notes", ""),
+            "order": app.get("order", 0),
+            "config": app.get("config", {}),
+            "last_render": app.get("last_render", 0),
+            "path": app.get("path", "")
+        }
+        
+        return Response(
+            json.dumps(installation_data),
+            status=200,
+            mimetype="application/json"
+        )
+
     # Handle the set_enabled json command
-    if request.json is not None and "set_enabled" in request.json:
+    elif request.json is not None and "set_enabled" in request.json:
         set_enabled = request.json["set_enabled"]
         if not isinstance(set_enabled, bool):
             return Response(
