@@ -35,6 +35,104 @@ def get_api_key_from_headers(headers: Headers) -> Optional[str]:
     return None
 
 
+def require_api_key() -> str:
+    """
+    Extract and validate API key from request headers.
+    Returns the API key if valid, otherwise aborts with 400.
+    """
+    api_key = get_api_key_from_headers(request.headers)
+    if not api_key:
+        abort(
+            HTTPStatus.BAD_REQUEST,
+            description="Missing or invalid Authorization header",
+        )
+    return api_key
+
+
+def get_authenticated_user(api_key: str) -> Dict[str, Any]:
+    """
+    Get user by API key.
+    Returns the user if found, otherwise aborts with 401.
+    """
+    user = db.get_user_by_api_key(api_key)
+    if not user:
+        abort(HTTPStatus.UNAUTHORIZED, description="Invalid API key")
+    return user
+
+
+def validate_and_get_device(device_id: str) -> None:
+    """
+    Validate device ID format.
+    Aborts with 400 if invalid.
+    """
+    if not validate_device_id(device_id):
+        abort(HTTPStatus.BAD_REQUEST, description="Invalid device ID")
+
+
+def get_device_and_user(device_id: str, api_key: str) -> tuple[Device, Dict[str, Any]]:
+    """
+    Authenticate and get device and user.
+    Returns (device, user) tuple if successful, otherwise aborts.
+    """
+    device = authenticate_device_access(device_id, api_key)
+    if not device:
+        abort(HTTPStatus.NOT_FOUND, description="Device not found or unauthorized")
+    
+    user = db.get_user_by_device_id(device_id)
+    if not user:
+        abort(HTTPStatus.NOT_FOUND, description="User not found")
+    
+    return device, user
+
+
+def get_user_device(user: Dict[str, Any], device_id: str) -> Device:
+    """
+    Get device from user's devices.
+    Returns device if found, otherwise aborts with 404.
+    """
+    device = user.get("devices", {}).get(device_id)
+    if not device:
+        abort(HTTPStatus.NOT_FOUND, description="Device not found")
+    return device
+
+
+def get_app_installation(user: Dict[str, Any], device_id: str, installation_id: str) -> App:
+    """
+    Get app installation from device.
+    Returns app if found, otherwise aborts with 404.
+    """
+    app = user["devices"][device_id].get("apps", {}).get(installation_id)
+    if not app:
+        abort(HTTPStatus.NOT_FOUND, description="App installation not found")
+    return app
+
+
+def get_app_by_id_or_name(username: str, app_id: str) -> Dict[str, Any]:
+    """
+    Get app details by ID or name.
+    Returns app details if found, otherwise aborts with 404.
+    """
+    app_details = db.get_app_details_by_id(username, app_id)
+    if not app_details:
+        app_details = db.get_app_details_by_name(username, app_id)
+    
+    if not app_details:
+        abort(HTTPStatus.NOT_FOUND, description="App not found")
+    
+    return app_details
+
+
+def get_request_json_or_abort() -> Dict[str, Any]:
+    """
+    Get JSON data from request.
+    Returns parsed JSON if valid, otherwise aborts with 400.
+    """
+    data = request.get_json()
+    if not data:
+        abort(HTTPStatus.BAD_REQUEST, description="Invalid JSON data")
+    return data
+
+
 def authenticate_device_access(device_id: str, api_key: str) -> Optional[Device]:
     """
     Authenticate access to a device using either device API key or user API key.
@@ -71,16 +169,8 @@ def get_device_payload(device: Device) -> dict[str, Any]:
 
 @bp.route("/devices", methods=["GET"])
 def list_devices() -> ResponseReturnValue:
-    api_key = get_api_key_from_headers(request.headers)
-    if not api_key:
-        abort(
-            HTTPStatus.BAD_REQUEST,
-            description="Missing or invalid Authorization header",
-        )
-
-    user = db.get_user_by_api_key(api_key)
-    if not user:
-        abort(HTTPStatus.UNAUTHORIZED, description="Invalid API key")
+    api_key = require_api_key()
+    user = get_authenticated_user(api_key)
 
     devices = user.get("devices", {})
     metadata = [get_device_payload(device) for device in devices.values()]
@@ -93,22 +183,14 @@ def list_devices() -> ResponseReturnValue:
 
 @bp.route("/devices/<string:device_id>", methods=["GET", "PATCH"])
 def get_device(device_id: str) -> ResponseReturnValue:
-    if not validate_device_id(device_id):
-        abort(HTTPStatus.BAD_REQUEST, description="Invalid device ID")
-
-    api_key = get_api_key_from_headers(request.headers)
-    if not api_key:
-        abort(
-            HTTPStatus.BAD_REQUEST,
-            description="Missing or invalid Authorization header",
-        )
+    validate_and_get_device(device_id)
+    api_key = require_api_key()
+    
     user = db.get_user_by_device_id(device_id)
     if not user:
         abort(HTTPStatus.NOT_FOUND)
-    device = user["devices"].get(device_id)
-
-    if not device:
-        abort(HTTPStatus.NOT_FOUND)
+    
+    device = get_user_device(user, device_id)
 
     user_api_key_matches = user.get("api_key") and user["api_key"] == api_key
     device_api_key_matches = device.get("api_key") and device["api_key"] == api_key
@@ -136,20 +218,9 @@ def get_device(device_id: str) -> ResponseReturnValue:
 @bp.route("/devices", methods=["POST"])
 def create_device() -> ResponseReturnValue:
     """Create a new device"""
-    api_key = get_api_key_from_headers(request.headers)
-    if not api_key:
-        abort(
-            HTTPStatus.BAD_REQUEST,
-            description="Missing or invalid Authorization header",
-        )
-
-    user = db.get_user_by_api_key(api_key)
-    if not user:
-        abort(HTTPStatus.UNAUTHORIZED, description="Invalid API key")
-
-    data = request.get_json()
-    if not data:
-        abort(HTTPStatus.BAD_REQUEST, description="Invalid JSON data")
+    api_key = require_api_key()
+    user = get_authenticated_user(api_key)
+    data = get_request_json_or_abort()
 
     name = data.get("name")
     if not name:
@@ -225,23 +296,14 @@ def create_device() -> ResponseReturnValue:
 @bp.route("/devices/<string:device_id>", methods=["PUT"])
 def update_device(device_id: str) -> ResponseReturnValue:
     """Update an existing device"""
-    if not validate_device_id(device_id):
-        abort(HTTPStatus.BAD_REQUEST, description="Invalid device ID")
-
-    api_key = get_api_key_from_headers(request.headers)
-    if not api_key:
-        abort(
-            HTTPStatus.BAD_REQUEST,
-            description="Missing or invalid Authorization header",
-        )
-
+    validate_and_get_device(device_id)
+    api_key = require_api_key()
+    
     user = db.get_user_by_device_id(device_id)
     if not user:
         abort(HTTPStatus.NOT_FOUND, description="Device not found")
     
-    device = user["devices"].get(device_id)
-    if not device:
-        abort(HTTPStatus.NOT_FOUND, description="Device not found")
+    device = get_user_device(user, device_id)
 
     # Check authorization (user API key or device API key)
     user_api_key_matches = user.get("api_key") and user["api_key"] == api_key
@@ -249,9 +311,7 @@ def update_device(device_id: str) -> ResponseReturnValue:
     if not user_api_key_matches and not device_api_key_matches:
         abort(HTTPStatus.FORBIDDEN, description="Unauthorized")
 
-    data = request.get_json()
-    if not data:
-        abort(HTTPStatus.BAD_REQUEST, description="Invalid JSON data")
+    data = get_request_json_or_abort()
 
     # Update device fields
     from tronbyt_server.models.device import validate_device_type
@@ -429,20 +489,9 @@ def handle_push(device_id: str) -> ResponseReturnValue:
 
 @bp.route("/devices/<string:device_id>/installations", methods=["GET", "POST"])
 def handle_installations(device_id: str) -> ResponseReturnValue:
-    if not validate_device_id(device_id):
-        abort(HTTPStatus.BAD_REQUEST, description="Invalid device ID")
-
-    # get api_key from Authorization header
-    api_key = get_api_key_from_headers(request.headers)
-    if not api_key:
-        abort(
-            HTTPStatus.BAD_REQUEST,
-            description="Missing or invalid Authorization header",
-        )
-
-    device = authenticate_device_access(device_id, api_key)
-    if not device:
-        abort(HTTPStatus.NOT_FOUND)
+    validate_and_get_device(device_id)
+    api_key = require_api_key()
+    device, user = get_device_and_user(device_id, api_key)
 
     if request.method == "GET":
         # List installations
@@ -459,13 +508,7 @@ def handle_installations(device_id: str) -> ResponseReturnValue:
     
     elif request.method == "POST":
         # Install new app
-        user = db.get_user_by_device_id(device_id)
-        if not user:
-            abort(HTTPStatus.NOT_FOUND, description="User not found")
-
-        data = request.get_json()
-        if not data:
-            abort(HTTPStatus.BAD_REQUEST, description="Invalid JSON data")
+        data = get_request_json_or_abort()
 
         app_name = data.get("app_name")
         if not app_name:
@@ -552,20 +595,9 @@ def handle_installations(device_id: str) -> ResponseReturnValue:
 def handle_patch_device_app(
     device_id: str, installation_id: str
 ) -> ResponseReturnValue:
-    if not validate_device_id(device_id):
-        abort(HTTPStatus.BAD_REQUEST, description="Invalid device ID")
-
-    # get api_key from Authorization header
-    api_key = get_api_key_from_headers(request.headers)
-    if not api_key:
-        abort(
-            HTTPStatus.BAD_REQUEST,
-            description="Missing or invalid Authorization header",
-        )
-
-    device = authenticate_device_access(device_id, api_key)
-    if not device:
-        abort(HTTPStatus.NOT_FOUND)
+    validate_and_get_device(device_id)
+    api_key = require_api_key()
+    device, user = get_device_and_user(device_id, api_key)
 
     # Handle the set_enabled json command
     if request.json is not None and "set_enabled" in request.json:
@@ -619,19 +651,9 @@ def handle_patch_device_app(
 ########################################################################################################
 @bp.delete("/devices/<string:device_id>/installations/<string:installation_id>")
 def handle_delete(device_id: str, installation_id: str) -> ResponseReturnValue:
-    if not validate_device_id(device_id):
-        abort(HTTPStatus.BAD_REQUEST, description="Invalid device ID")
-
-    # get api_key from Authorization header
-    api_key = get_api_key_from_headers(request.headers)
-    if not api_key:
-        abort(
-            HTTPStatus.BAD_REQUEST,
-            description="Missing or invalid Authorization header",
-        )
-    device = authenticate_device_access(device_id, api_key)
-    if not device:
-        abort(HTTPStatus.NOT_FOUND)
+    validate_and_get_device(device_id)
+    api_key = require_api_key()
+    device, user = get_device_and_user(device_id, api_key)
 
     pushed_webp_path = db.get_device_webp_dir(device["id"]) / "pushed"
     if not pushed_webp_path.is_dir():
@@ -655,16 +677,8 @@ def handle_delete(device_id: str, installation_id: str) -> ResponseReturnValue:
 @bp.get("/apps")
 def list_available_apps() -> ResponseReturnValue:
     """List all available apps (system and user apps)"""
-    api_key = get_api_key_from_headers(request.headers)
-    if not api_key:
-        abort(
-            HTTPStatus.BAD_REQUEST,
-            description="Missing or invalid Authorization header",
-        )
-    
-    user = db.get_user_by_api_key(api_key)
-    if not user:
-        abort(HTTPStatus.UNAUTHORIZED, description="Invalid API key")
+    api_key = require_api_key()
+    user = get_authenticated_user(api_key)
     
     # Get system apps
     system_apps_list = db.get_apps_list("system")
@@ -704,24 +718,9 @@ def list_available_apps() -> ResponseReturnValue:
 @bp.get("/apps/<string:app_id>/schema")
 def get_app_schema(app_id: str) -> ResponseReturnValue:
     """Get the schema for an app by its ID"""
-    api_key = get_api_key_from_headers(request.headers)
-    if not api_key:
-        abort(
-            HTTPStatus.BAD_REQUEST,
-            description="Missing or invalid Authorization header",
-        )
-    
-    user = db.get_user_by_api_key(api_key)
-    if not user:
-        abort(HTTPStatus.UNAUTHORIZED, description="Invalid API key")
-    
-    # Try to get app details by ID first, then by name
-    app_details = db.get_app_details_by_id(user["username"], app_id)
-    if not app_details:
-        app_details = db.get_app_details_by_name(user["username"], app_id)
-    
-    if not app_details:
-        abort(HTTPStatus.NOT_FOUND, description="App not found")
+    api_key = require_api_key()
+    user = get_authenticated_user(api_key)
+    app_details = get_app_by_id_or_name(user["username"], app_id)
     
     app_path = app_details.get("path")
     if not app_path:
@@ -754,24 +753,9 @@ def app_schema_handler(app_id: str, handler: str) -> ResponseReturnValue:
     Call a schema handler for an app.
     This allows testing schema handlers before installing the app.
     """
-    api_key = get_api_key_from_headers(request.headers)
-    if not api_key:
-        abort(
-            HTTPStatus.BAD_REQUEST,
-            description="Missing or invalid Authorization header",
-        )
-    
-    user = db.get_user_by_api_key(api_key)
-    if not user:
-        abort(HTTPStatus.UNAUTHORIZED, description="Invalid API key")
-    
-    # Try to get app details by ID first, then by name
-    app_details = db.get_app_details_by_id(user["username"], app_id)
-    if not app_details:
-        app_details = db.get_app_details_by_name(user["username"], app_id)
-    
-    if not app_details:
-        abort(HTTPStatus.NOT_FOUND, description="App not found")
+    api_key = require_api_key()
+    user = get_authenticated_user(api_key)
+    app_details = get_app_by_id_or_name(user["username"], app_id)
     
     app_path = app_details.get("path")
     if not app_path:
@@ -779,9 +763,9 @@ def app_schema_handler(app_id: str, handler: str) -> ResponseReturnValue:
     
     try:
         # Parse the JSON body
-        data = request.get_json()
-        if not data or "param" not in data:
-            abort(HTTPStatus.BAD_REQUEST, description="Invalid request body")
+        data = get_request_json_or_abort()
+        if "param" not in data:
+            abort(HTTPStatus.BAD_REQUEST, description="Missing required parameter 'param'")
         
         # Call the handler with the provided parameter
         result = call_handler(Path(app_path), handler, data["param"])
@@ -798,24 +782,9 @@ def app_schema_handler(app_id: str, handler: str) -> ResponseReturnValue:
 @bp.get("/devices/<string:device_id>/apps")
 def list_device_apps(device_id: str) -> ResponseReturnValue:
     """List all apps available for a specific device"""
-    if not validate_device_id(device_id):
-        abort(HTTPStatus.BAD_REQUEST, description="Invalid device ID")
-    
-    api_key = get_api_key_from_headers(request.headers)
-    if not api_key:
-        abort(
-            HTTPStatus.BAD_REQUEST,
-            description="Missing or invalid Authorization header",
-        )
-    
-    device = authenticate_device_access(device_id, api_key)
-    if not device:
-        abort(HTTPStatus.NOT_FOUND)
-    
-    # Get the user who owns this device
-    user = db.get_user_by_device_id(device_id)
-    if not user:
-        abort(HTTPStatus.NOT_FOUND, description="User not found")
+    validate_and_get_device(device_id)
+    api_key = require_api_key()
+    device, user = get_device_and_user(device_id, api_key)
     
     # Get system apps
     system_apps_list = db.get_apps_list("system")
@@ -861,24 +830,12 @@ def list_device_apps(device_id: str) -> ResponseReturnValue:
 @bp.post("/devices/<string:device_id>/push_app")
 def handle_app_push(device_id: str) -> ResponseReturnValue:
     try:
-        if not validate_device_id(device_id):
-            raise ValueError("Invalid device ID")
-
-        # get api_key from Authorization header
-        api_key = get_api_key_from_headers(request.headers)
-        if not api_key:
-            raise ValueError("Missing or invalid Authorization header")
-
-        device = authenticate_device_access(device_id, api_key)
-        if not device:
-            raise FileNotFoundError("Device not found or invalid API key")
-
-        user = db.get_user_by_device_id(device_id)
-        if not user:
-            raise FileNotFoundError("User not found")
+        validate_and_get_device(device_id)
+        api_key = require_api_key()
+        device, user = get_device_and_user(device_id, api_key)
 
         # Read the request body as a JSON object
-        data: Dict[str, Any] = request.get_json()
+        data = get_request_json_or_abort()
 
         config = data.get("config")
         app_id = data.get("app_id")
@@ -933,31 +890,10 @@ def get_installation_schema(device_id: str, installation_id: str) -> ResponseRet
     Get the schema for an installed app on a device.
     Accepts both user API key and device API key.
     """
-    if not validate_device_id(device_id):
-        abort(HTTPStatus.BAD_REQUEST, description="Invalid device ID")
-    
-    # Get API key from Authorization header
-    api_key = get_api_key_from_headers(request.headers)
-    if not api_key:
-        abort(
-            HTTPStatus.BAD_REQUEST,
-            description="Missing or invalid Authorization header",
-        )
-    
-    # Authenticate device access
-    device = authenticate_device_access(device_id, api_key)
-    if not device:
-        abort(HTTPStatus.NOT_FOUND, description="Device not found or unauthorized")
-    
-    # Get the user who owns this device
-    user = db.get_user_by_device_id(device_id)
-    if not user:
-        abort(HTTPStatus.NOT_FOUND, description="User not found")
-    
-    # Get the app installation
-    app = user["devices"][device_id].get("apps", {}).get(installation_id)
-    if not app:
-        abort(HTTPStatus.NOT_FOUND, description="App installation not found")
+    validate_and_get_device(device_id)
+    api_key = require_api_key()
+    device, user = get_device_and_user(device_id, api_key)
+    app = get_app_installation(user, device_id, installation_id)
     
     try:
         # Get the schema for the app
@@ -986,37 +922,16 @@ def api_schema_handler(device_id: str, installation_id: str, handler: str) -> Re
     Call a schema handler for an installed app on a device.
     Accepts both user API key and device API key.
     """
-    if not validate_device_id(device_id):
-        abort(HTTPStatus.BAD_REQUEST, description="Invalid device ID")
-    
-    # Get API key from Authorization header
-    api_key = get_api_key_from_headers(request.headers)
-    if not api_key:
-        abort(
-            HTTPStatus.BAD_REQUEST,
-            description="Missing or invalid Authorization header",
-        )
-    
-    # Authenticate device access
-    device = authenticate_device_access(device_id, api_key)
-    if not device:
-        abort(HTTPStatus.NOT_FOUND, description="Device not found or unauthorized")
-    
-    # Get the user who owns this device
-    user = db.get_user_by_device_id(device_id)
-    if not user:
-        abort(HTTPStatus.NOT_FOUND, description="User not found")
-    
-    # Get the app installation
-    app = user["devices"][device_id].get("apps", {}).get(installation_id)
-    if not app:
-        abort(HTTPStatus.NOT_FOUND, description="App installation not found")
+    validate_and_get_device(device_id)
+    api_key = require_api_key()
+    device, user = get_device_and_user(device_id, api_key)
+    app = get_app_installation(user, device_id, installation_id)
     
     try:
         # Parse the JSON body
-        data = request.get_json()
-        if not data or "param" not in data:
-            abort(HTTPStatus.BAD_REQUEST, description="Invalid request body")
+        data = get_request_json_or_abort()
+        if "param" not in data:
+            abort(HTTPStatus.BAD_REQUEST, description="Missing required parameter 'param'")
         
         # Call the handler with the provided parameter
         result = call_handler(Path(app["path"]), handler, data["param"])
